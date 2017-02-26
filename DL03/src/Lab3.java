@@ -18,19 +18,289 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.Vector;
 
 import javax.imageio.ImageIO;
 
+
+
+
+/**
+ * Reperesents a single unit of a neural network
+ * @author ameyaraul
+ *
+ */
+class Perceptron {
+	public double[] w;
+	public double w_bias;
+	public double eta;
+	public int noEpochs;
+	public double output;
+	public double delta;
+	public double delta_prev; // to add momentum
+	public double alpha; //momentum term
+	public static final int MAX_PATIENCE = 20;
+	public static final int SEED = 8;
+	
+	public Instance[] train;
+	public Instance[] tune;
+	public Instance[] test;
+	
+	public Perceptron(double eta, int size, double alpha){
+		this.eta = eta;
+		w = new double[size];
+		Random rand = new Random(SEED);
+		w_bias = 0.02*rand.nextDouble() - 0.01;
+		for (int i = 0; i < w.length; i++) {
+			w[i] = 0.02*rand.nextDouble()-0.01;
+		}
+		delta = 0;
+		this.alpha = alpha;
+	}
+	
+	
+	public double getwx(List<Double> list) {
+		double sum = 0;
+		for (int i = 0; i < list.size(); i++) {
+			sum += w[i] * list.get(i);
+		}
+		return sum + w_bias * -1;
+		
+	}
+	
+	public void sigmoidUpdateWeights(double deltaw, List<Double> inputs) {
+		delta_prev = delta;
+		delta = output*(1-output)*deltaw;
+		for (int i = 0; i < inputs.size(); i++) {
+			w[i] += eta*inputs.get(i) * delta + alpha*delta_prev;
+		}
+		w_bias += eta*delta*-1 + alpha*delta_prev;
+	}
+	
+	public double getSigmoidOutput(List<Double> values) {
+		double wx = getwx(values);
+		output = 1/(1 + Math.exp(-wx));
+		if (output == 1) {
+			System.out.println(Math.exp(-wx));
+			System.out.println("God save my sorry soul!");
+		}
+		return output;
+	}
+}
+
+class Layer {
+	int output_size;
+	int input_size;
+	
+	Perceptron[] units;
+	List<Integer> dropped_units;
+	double eta;
+	double alpha;
+	double dropout;
+	public ArrayList<Double> output;
+	
+	public Layer(int output_size, double eta, int input_size, double alpha, double dropout) {
+		this.output_size = output_size;
+		this.input_size = input_size;
+		this.units = new Perceptron[output_size];
+		this.eta = eta;
+		this.alpha = alpha;
+		this.dropout = dropout;
+		
+		for (int i = 0; i < output_size; i++) {
+			units[i] = new Perceptron(eta, input_size, alpha);
+		}
+		
+		output = new ArrayList<Double>(output_size);
+		for (int i = 0; i < output_size; i++) {
+			output.add(i, 0.0); 
+		}
+	}
+	
+	public void updateOutput(List<Double> values){
+		int noToDrop = (int)Math.floor(dropout*output_size);
+		dropped_units = new ArrayList<Integer>(noToDrop);
+		Random randGen = new Random(ANN.SEED);
+		for (int j = 0; j < noToDrop; j++) {
+			int unit_no = randGen.nextInt(noToDrop);
+			if(dropped_units.contains(unit_no))
+				j--;
+			else {
+				dropped_units.add(unit_no);
+			}
+		}
+
+		for (int i = 0 ; i < output_size; i++) {
+			if (dropped_units.contains(i)) {
+				units[i].output = 0;
+				output.set(i, 0.0);
+				continue;
+			}
+			output.set(i, units[i].getSigmoidOutput(values));
+		}
+	}
+	
+	public void updateEncoding(Vector<Double> values) {
+		for (int i = 0 ; i < output_size; i++) {
+			output.set(i, units[i].getSigmoidOutput(values.subList(i*input_size, (i + 1)* input_size)));
+		}
+	}
+	
+	public void updateWeights(ArrayList<Double> labels, ArrayList<Double> layer_inputs) {
+		for (int i = 0; i < output_size; i++) {
+			if (dropped_units.contains(i)){
+				continue;
+			}
+			units[i].sigmoidUpdateWeights(labels.get(i) - units[i].output, layer_inputs);
+		}
+	}
+	
+	public void updateWeights(double label, ArrayList<Double> layer_inputs) {
+		for (int i = 0; i < output_size; i++) {
+			if (dropped_units.contains(i)){
+				continue;
+			}
+			double y = 0;
+			if (label == i) 
+				y = 1;
+			units[i].sigmoidUpdateWeights(y - units[i].output, layer_inputs);
+		}
+	}
+	
+	public void updateWeights(ArrayList<Double> layer_inputs, Layer nextLayer) {
+		for (int i = 0; i < output_size; i++) {
+			if (dropped_units.contains(i)){
+				continue;
+			}
+			// calculate delta*w 
+			// unit[i] is connected to units in the nextLayer
+			double deltaw = 0;
+			for (int j = 0; j < nextLayer.output_size; j++) {
+				deltaw += nextLayer.units[j].delta * nextLayer.units[j].w[i];
+			}
+			units[i].sigmoidUpdateWeights(deltaw, layer_inputs);
+		}
+	}
+	
+	public void updateEncodingWeights(Vector<Double> layer_inputs, Layer nextLayer) {
+		for (int i = 0; i < output_size; i++) {
+			// calculate delta*w 
+			// unit[i] is connected to units in the nextLayer
+			double deltaw = 0;
+			for (int j = 0; j < nextLayer.output_size; j++) {
+				deltaw += nextLayer.units[j].delta * nextLayer.units[j].w[i];
+			}
+			units[i].sigmoidUpdateWeights(deltaw, layer_inputs.subList(i*input_size, (i + 1)*input_size));
+		}
+	}
+}
+
+class ANN {
+	int[] layerSizes;
+	Layer[] layers;
+	double eta;
+	double alpha;
+	public int noEpochs;
+	public static int MAX_PATIENCE = 20;
+	public static int SEED = 10;
+	
+	Vector<Vector<Double>> train;
+	Vector<Vector<Double>> tune;
+	Vector<Vector<Double>> test;
+	
+	public ANN(double eta, double alpha, int noEpochs, int[] layer_sizes, double[] dropouts, int input_size, Vector<Vector<Double>> train, 
+			Vector<Vector<Double>> tune, Vector<Vector<Double>> test) {
+		this.eta = eta;
+		this.alpha = alpha;
+		this.noEpochs = noEpochs;
+		this.train = train;
+		this.tune = tune;
+		this.test = test;
+		this.layerSizes = layer_sizes;
+		this.layers = new Layer[layer_sizes.length];
+		
+		for (int i = 0; i < layer_sizes.length; i++) {
+			if (i == 0)
+				layers[i] = new Layer(layer_sizes[i], eta, input_size, alpha, dropouts[i]);
+			else
+				layers[i] = new Layer(layer_sizes[i], eta, layers[i-1].output_size, alpha, dropouts[i]);
+		}
+	}
+	
+	public void trainANN() {
+		// for each example train the ANN
+		Collections.shuffle(train);
+		for (int i = 0; i < train.size(); i++) {
+			// Now traverse through each layer and generate outputs
+			for (int j = 0; j < layerSizes.length; j++) {
+				if (j == 0) {
+					layers[j].updateEncoding(train.get(i));
+				} else {
+					layers[j].updateOutput(layers[j-1].output);
+				}
+			}
+			
+			// Now do backpropogation
+			for (int j = layerSizes.length-1; j >= 0; j--) {
+				if (j == layerSizes.length-1) {
+					
+					layers[j].updateWeights(train.get(i).get(train.get(i).size() - 1), layers[j-1].output);
+				} else if (j == 0) {
+					layers[j].updateEncodingWeights(train.get(i), layers[j+1]);
+				} else {
+					layers[j].updateWeights(layers[j-1].output, layers[j+1]);
+				}
+			}
+			
+		}
+	}
+	
+	public double getAccuracy(Vector<Vector<Double>> samples){
+		double acc = 0;
+		for(Vector<Double> sample : samples) {
+			ArrayList<Double> y_label = this.getLabel(sample);
+			// We use Least Squares Loss for comparing the 
+			// label outputted by the ANN and the sample's label
+			int y_ind = y_label.indexOf(Collections.max(y_label));
+			int ind = sample.get(sample.size() - 1).intValue();
+			if (ind == y_ind) {
+				acc++;
+			}
+		}
+		return (double)acc/samples.size();
+	}
+	
+	public ArrayList<Double> getLabel(Vector<Double> inst) {
+		for (int j = 0; j < layers.length; j++) {
+			double back_dropout = layers[j].dropout;
+			layers[j].dropout = 0;
+			if (j == 0) {
+				layers[j].updateEncoding(inst);
+			} else {
+				layers[j].updateOutput(layers[j-1].output);
+			}
+			layers[j].dropout = back_dropout;
+		}
+		return layers[layerSizes.length - 1].output;
+	}
+	
+	public Object clone() throws CloneNotSupportedException{
+		return super.clone();
+	}
+}
+
 public class Lab3 {
     
-	private static int     imageSize = 8; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
+	private static int     imageSize = 32; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
 	                                       // You might want to resize to 8x8, 16x16, 32x32, or 64x64; this can reduce your network size and speed up debugging runs.
 	                                       // ALL IMAGES IN A TRAINING RUN SHOULD BE THE *SAME* SIZE.
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
 	
-	private static final Boolean    useRGB = false; // If true, FOUR units are used per pixel: red, green, blue, and grey.  If false, only ONE (the grey-scale value).
+	private static final Boolean    useRGB = true; // If true, FOUR units are used per pixel: red, green, blue, and grey.  If false, only ONE (the grey-scale value).
 	private static       int unitsPerPixel = (useRGB ? 4 : 1); // If using RGB, use red+blue+green+grey.  Otherwise just use the grey value.
 			
 	private static String    modelToUse = "oneLayer"; // Should be one of { "perceptrons", "oneLayer", "deep" };  You might want to use this if you are trying approaches other than a Deep ANN.
@@ -38,7 +308,7 @@ public class Lab3 {
 	                                                  // Or use the get2DfeatureValue() 'accessor function' that maps 2D coordinates into the 1D vector.  
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
-	private static double eta       =    0.1, fractionOfTrainingToUse = 1.00, dropoutRate = 0.50; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
+	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.00; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
 	private static int    maxEpochs = 1000; // Feel free to set to a different value.
 
 	public static void main(String[] args) {
@@ -367,17 +637,18 @@ public class Lab3 {
 	////////////////////////////////////////////////////////////////////////////////////////////////   ONE HIDDEN LAYER
 
 	private static boolean debugOneLayer               = false;  // If set true, more things checked and/or printed (which does slow down the code).
-	private static int    numberOfHiddenUnits          = 250;
+	private static int    numberOfHiddenUnits          = 50;
 	
 	private static int trainOneHU(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors, Vector<Vector<Double>> testFeatureVectors) {
 	    long overallStart   = System.currentTimeMillis(), start = overallStart;
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
-        
+        ANN ann = new ANN(eta, 0.0, 1000, new int[]{imageSize*imageSize, numberOfHiddenUnits, Category.values().length}, new double[] {0, dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
 
-            // CODE NEEDED HERE!
-			
+            ann.trainANN();
+            double acc = ann.getAccuracy(tuneFeatureVectors);
+            System.out.println(acc);
 	        System.out.println("Done with Epoch # " + comma(epoch) + ".  Took " + convertMillisecondsToTimeSpan(System.currentTimeMillis() - start) + " (" + convertMillisecondsToTimeSpan(System.currentTimeMillis() - overallStart) + " overall).");
 	        reportOneLayerConfig(); // Print out some info after epoch, so you can see what experiment is running in a given console.
 	        start = System.currentTimeMillis();
