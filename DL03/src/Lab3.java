@@ -93,10 +93,10 @@ class Perceptron {
 	}
 }
 
-class Layer {
+
+abstract class Layer {
 	int output_size;
 	int input_size;
-	
 	Perceptron[] units;
 	List<Integer> dropped_units;
 	double eta;
@@ -104,7 +104,17 @@ class Layer {
 	double dropout;
 	public ArrayList<Double> output;
 	
-	public Layer(int output_size, double eta, int input_size, double alpha, double dropout) {
+	// Update outputs of the layer
+	abstract public void updateOutput(List<Double> values);
+	// Update weights if this is the output layer
+	abstract public void updateWeights(double label, ArrayList<Double> layer_inputs);
+	// Update weights if this is an intermediate/first layer
+	abstract public void updateWeights(List<Double> layer_inputs, Layer nextLayer);
+}
+
+class DenseLayer extends Layer {
+	
+	public DenseLayer(int output_size, int input_size, double eta, double alpha, double dropout) {
 		this.output_size = output_size;
 		this.input_size = input_size;
 		this.units = new Perceptron[output_size];
@@ -122,6 +132,7 @@ class Layer {
 		}
 	}
 	
+	@Override
 	public void updateOutput(List<Double> values){
 		int noToDrop = (int)Math.floor(dropout*output_size);
 		dropped_units = new ArrayList<Integer>(noToDrop);
@@ -145,11 +156,11 @@ class Layer {
 		}
 	}
 	
-	public void updateEncoding(Vector<Double> values) {
-		for (int i = 0 ; i < output_size; i++) {
-			output.set(i, units[i].getSigmoidOutput(values));//.subList(i*input_size, (i + 1)* input_size)
-		}
-	}
+//	public void updateEncoding(Vector<Double> values) {
+//		for (int i = 0 ; i < output_size; i++) {
+//			output.set(i, units[i].getSigmoidOutput(values));//.subList(i*input_size, (i + 1)* input_size)
+//		}
+//	}
 	
 	public void updateWeights(ArrayList<Double> labels, ArrayList<Double> layer_inputs) {
 		for (int i = 0; i < output_size; i++) {
@@ -160,6 +171,7 @@ class Layer {
 		}
 	}
 	
+	@Override
 	public void updateWeights(double label, ArrayList<Double> layer_inputs) {
 		for (int i = 0; i < output_size; i++) {
 			if (dropped_units.contains(i)){
@@ -172,7 +184,8 @@ class Layer {
 		}
 	}
 	
-	public void updateWeights(ArrayList<Double> layer_inputs, Layer nextLayer) {
+	@Override
+	public void updateWeights(List<Double> layer_inputs, Layer nextLayer) {
 		for (int i = 0; i < output_size; i++) {
 			if (dropped_units.contains(i)){
 				continue;
@@ -187,22 +200,66 @@ class Layer {
 		}
 	}
 	
-	public void updateEncodingWeights(Vector<Double> layer_inputs, Layer nextLayer) {
+//	public void updateEncodingWeights(Vector<Double> layer_inputs, Layer nextLayer) {
+//		for (int i = 0; i < output_size; i++) {
+//			// calculate delta*w 
+//			// unit[i] is connected to units in the nextLayer
+//			double deltaw = 0;
+//			for (int j = 0; j < nextLayer.output_size; j++) {
+//				deltaw += nextLayer.units[j].delta * nextLayer.units[j].w[i];
+//			}
+//			units[i].sigmoidUpdateWeights(deltaw, layer_inputs);//.subList(i*input_size, (i + 1)*input_size)
+//		}
+//	}
+}
+
+class ConvolutionLayer extends Layer {
+	
+	int[] w;
+	int[] w_bias;
+	
+	public ConvolutionLayer(int output_size, int input_size, double eta, double alpha, double dropout) {
+		this.output_size = output_size;
+		this.input_size = input_size;
+		this.units = new Perceptron[output_size];
+		this.eta = eta;
+		this.alpha = alpha;
+		this.dropout = dropout;
+
+		
 		for (int i = 0; i < output_size; i++) {
-			// calculate delta*w 
-			// unit[i] is connected to units in the nextLayer
-			double deltaw = 0;
-			for (int j = 0; j < nextLayer.output_size; j++) {
-				deltaw += nextLayer.units[j].delta * nextLayer.units[j].w[i];
-			}
-			units[i].sigmoidUpdateWeights(deltaw, layer_inputs);//.subList(i*input_size, (i + 1)*input_size)
+			units[i] = new Perceptron(eta, input_size, alpha, i);
+
 		}
+		
+		output = new ArrayList<Double>(output_size);
+		for (int i = 0; i < output_size; i++) {
+			output.add(i, 0.0); 
+		}
+	}
+
+	@Override
+	public void updateOutput(List<Double> values) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void updateWeights(double label, ArrayList<Double> layer_inputs) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void updateWeights(List<Double> layer_inputs, Layer nextLayer) {
+		// TODO Auto-generated method stub
+		
 	}
 }
 
 class ANN {
 	int[] layerSizes;
-	Layer[] layers;
+	ArrayList<Layer> layers;
 	double eta;
 	double alpha;
 	public int noEpochs;
@@ -213,6 +270,11 @@ class ANN {
 	Vector<Vector<Double>> tune;
 	Vector<Vector<Double>> test;
 	
+	public ANN(Vector<Vector<Double>> train) {
+		this.layers = new ArrayList<Layer>();
+		this.train = train;
+	}
+	
 	public ANN(double eta, double alpha, int noEpochs, int[] layer_sizes, double[] dropouts, int input_size, Vector<Vector<Double>> train, 
 			Vector<Vector<Double>> tune, Vector<Vector<Double>> test) {
 		this.eta = eta;
@@ -222,14 +284,18 @@ class ANN {
 		this.tune = tune;
 		this.test = test;
 		this.layerSizes = layer_sizes;
-		this.layers = new Layer[layer_sizes.length];
+		this.layers = new ArrayList<Layer>();
 		
 		for (int i = 0; i < layer_sizes.length; i++) {
 			if (i == 0)
-				layers[i] = new Layer(layer_sizes[i], eta, train.get(0).size(), alpha, dropouts[i]);
+				layers.add(new DenseLayer(layer_sizes[i], train.get(0).size(), eta, alpha, dropouts[i]));
 			else
-				layers[i] = new Layer(layer_sizes[i], eta, layers[i-1].output_size, alpha, dropouts[i]);
+				layers.add(new DenseLayer(layer_sizes[i], layers.get(i-1).output_size, eta, alpha, dropouts[i]));
 		}
+	}
+	
+	public void add(Layer layer) {
+		layers.add(layer);
 	}
 	
 	public void trainANN() {
@@ -237,23 +303,23 @@ class ANN {
 		//Collections.shuffle(train);
 		for (int i = 0; i < train.size(); i++) {
 			// Now traverse through each layer and generate outputs
-			for (int j = 0; j < layerSizes.length; j++) {
+			for (int j = 0; j < layers.size(); j++) {
 				if (j == 0) {
-					layers[j].updateEncoding(train.get(i));
+					layers.get(j).updateOutput(train.get(i));
 				} else {
-					layers[j].updateOutput(layers[j-1].output);
+					layers.get(j).updateOutput(layers.get(j-1).output);
 				}
 			}
 			
 			// Now do backpropogation
-			for (int j = layerSizes.length-1; j >= 0; j--) {
-				if (j == layerSizes.length-1) {
+			for (int j = layers.size()-1; j >= 0; j--) {
+				if (j == layers.size()-1) {
 					
-					layers[j].updateWeights(train.get(i).get(train.get(i).size() - 1), layers[j-1].output);
+					layers.get(j).updateWeights(train.get(i).get(train.get(i).size() - 1), layers.get(j-1).output);
 				} else if (j == 0) {
-					layers[j].updateEncodingWeights(train.get(i), layers[j+1]);
+					layers.get(j).updateWeights(train.get(i), layers.get(j+1));
 				} else {
-					layers[j].updateWeights(layers[j-1].output, layers[j+1]);
+					layers.get(j).updateWeights(layers.get(j-1).output, layers.get(j+1));
 				}
 			}
 			
@@ -276,17 +342,17 @@ class ANN {
 	}
 	
 	public ArrayList<Double> getLabel(Vector<Double> inst) {
-		for (int j = 0; j < layers.length; j++) {
-			double back_dropout = layers[j].dropout;
-			layers[j].dropout = 0;
+		for (int j = 0; j < layers.size(); j++) {
+			double back_dropout = layers.get(j).dropout;
+			layers.get(j).dropout = 0;
 			if (j == 0) {
-				layers[j].updateEncoding(inst);
+				layers.get(j).updateOutput(inst);
 			} else {
-				layers[j].updateOutput(layers[j-1].output);
+				layers.get(j).updateOutput(layers.get(j-1).output);
 			}
-			layers[j].dropout = back_dropout;
+			layers.get(j).dropout = back_dropout;
 		}
-		return layers[layerSizes.length - 1].output;
+		return layers.get(layers.size() - 1).output;
 	}
 	
 	@Override
@@ -297,7 +363,7 @@ class ANN {
 
 public class Lab3 {
     
-	private static int     imageSize = 16; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
+	private static int     imageSize = 8; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
 	                                       // You might want to resize to 8x8, 16x16, 32x32, or 64x64; this can reduce your network size and speed up debugging runs.
 	                                       // ALL IMAGES IN A TRAINING RUN SHOULD BE THE *SAME* SIZE.
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
@@ -644,8 +710,11 @@ public class Lab3 {
 	private static int trainOneHU(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors, Vector<Vector<Double>> testFeatureVectors) {
 	    long overallStart   = System.currentTimeMillis(), start = overallStart;
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
-        ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
-		for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
+        //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
+		ANN ann = new ANN(trainFeatureVectors);
+		ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
+		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate));
+        for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
 
             ann.trainANN();
