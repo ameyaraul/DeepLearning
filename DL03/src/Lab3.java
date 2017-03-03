@@ -334,6 +334,7 @@ class ConvolutionLayer extends Layer {
 		double[] netDelta = new double[w.length];
 		double netDeltaBias = 0;
 		for (int i = 0; i < output_size; i++) {
+			// TODO: Fix this when we add dropout
 //			if (dropped_units.contains(i)){
 //				continue;
 //			}
@@ -378,13 +379,141 @@ class ConvolutionLayer extends Layer {
 		// (x-window + 1,y-window + 1) to (x, y) for each plate
 		for (int plate = 0; plate < noPlates; plate++) {
 			for (int i = x - convWindowSize + 1; i <= x; i++) {
+				if (!(i >=0 && i <outputSideDim))
+					continue;
 				for (int j = y - convWindowSize + 1; j <= y; j++) {
+					if (!(j>=0 && j <outputSideDim))
+						continue;
 					deltaw += w[(unit_index + plate)*dimensions + dim] * units[(i*outputSideDim + j)*noPlates + plate].delta;
 				}
 			}
 		}
 		return deltaw;
 	}
+}
+
+class MaxPoolingLayer extends Layer {
+
+	int inputDimensions;
+	int windowSize;
+	int windowStride;
+	int outputSideDim;
+	int noPlates;
+	int inputImageSize;
+	int unitsPerPlate;
+	List<Double> inputValues;
+	Layer nextLayer;
+	
+	public MaxPoolingLayer(int no_plates, int inputImageSize, int window_size, int window_stride, double eta, double alpha, double dropout) {
+		this.inputImageSize = inputImageSize;
+		this.noPlates = no_plates;
+		this.windowSize = window_size;
+		this.windowStride = window_stride;
+		
+		this.outputSideDim = (inputImageSize - 2*(int)Math.floor(window_size/2))/window_stride + 1;
+		this.output_size = outputSideDim * outputSideDim * no_plates;
+		
+		this.eta = eta;
+		this.alpha = alpha;
+		this.dropout = dropout;
+		// input and output dimensions must be equal
+		// e.g. if you have 20 plates on input, you have 20 corresponding 1-1 mapped max pool plates
+		this.inputDimensions = no_plates; 
+		this.unitsPerPlate = outputSideDim * outputSideDim;
+		
+		output = new ArrayList<Double>(output_size);
+		for (int i = 0; i < output_size; i++) {
+			output.add(i, 0.0); 
+		}
+	}
+	@Override
+	public void updateOutput(List<Double> values) {
+		// Storing the input values for referencing later
+		// so we can access it in the getDeltaw method
+		this.inputValues = values;
+		
+		// TODO: Add dropout!!
+		// Our output vector is formatted as follows
+		// o1p1 o1p2 o1p3 .... o2p1 o2p2 o2p3 ... p3p1 o3p2 o3p3 ...
+		for (int i = 0; i < outputSideDim; i++) {
+			for(int j = 0; j < outputSideDim; j++) {
+				for(int plate = 0; plate < noPlates; plate++){
+					// For each plate compute the outputs
+					// we are looking at unit (i,j) in the output of plate 'plate' 
+					// lets collect the weighted sum of corresponding input
+					// for every (i,j) in the output, the corresponding position in input is (i+window/2, j + window/2)
+					// So now loop over all those positions and compute the weighted sum 
+					
+					double max = 0;
+					for (int k = i; k < i + windowSize; k++) {
+						for(int l = j; l < j + windowSize; l++) {
+							// First covert 2-D indexing to 1-D
+							// Note that (k,l) is the index in the input image
+							int image_index = ((k)*this.inputImageSize + (l))*inputDimensions;
+							
+							if (values.get(image_index + plate) > max) {
+								max = values.get(image_index + plate);
+							}
+							
+						}	
+					}
+					
+					
+					// Now set the units output to the correct value
+					// Currently using SIGMOID
+					// First find the index of the unit in the units array
+					int unit_index = (i*outputSideDim + j)*noPlates + plate;
+					output.set(unit_index, max);				
+				}
+			}
+		}
+		
+	}
+
+	@Override
+	public void updateWeights(double label, ArrayList<Double> layer_inputs) {
+		// No waits to update
+		// Also do not use this layer as the output layer
+		// getDeltaW will give a null pointer as nextLayer will be null
+		
+	}
+
+	@Override
+	public void updateWeights(List<Double> layer_inputs, Layer nextLayer) {
+		// No waits to update
+		// Just remember the next layer so we can access it in the getDeltaw method
+		this.nextLayer = nextLayer;
+	}
+
+	@Override
+	public double getDeltaW(int unit_index) {
+		// We only do backpropagation through the unit if it is the max
+		// Return 0 if the unit is not the max for all possible window positions
+		// Otherwise return the delta.w from the next layer
+		
+		// First convert unit_index to 2D coordinates
+		int x = (unit_index/inputDimensions) / inputImageSize;
+		int y = (unit_index/inputDimensions) % inputImageSize;
+		int plate = unit_index%inputDimensions;
+		double deltaw = 0;
+		// So this pixel influences the output of units from 
+		// (x-window + 1,y-window + 1) to (x, y) for each plate
+
+		for (int i = x - windowSize + 1; i <= x; i++) {
+			if (!(i >=0 && i <outputSideDim))
+				continue;
+			for (int j = y - windowSize + 1; j <= y; j++) {
+				if (!(j>=0 && j <outputSideDim))
+					continue;
+				if (Math.abs(output.get((i*outputSideDim + j)*noPlates + plate) - inputValues.get(unit_index)) < 0.0001)
+					deltaw += nextLayer.getDeltaW((i*outputSideDim + j)*noPlates + plate);
+			}
+		}
+
+		return deltaw;
+		
+	}
+	
 }
 
 class ANN {
@@ -493,7 +622,7 @@ class ANN {
 
 public class Lab3 {
     
-	private static int     imageSize = 8; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
+	private static int     imageSize = 16; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
 	                                       // You might want to resize to 8x8, 16x16, 32x32, or 64x64; this can reduce your network size and speed up debugging runs.
 	                                       // ALL IMAGES IN A TRAINING RUN SHOULD BE THE *SAME* SIZE.
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
@@ -842,8 +971,11 @@ public class Lab3 {
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
         //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		ANN ann = new ANN(trainFeatureVectors);
-		ann.add(new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, eta, 0.0, dropoutRate));
-		ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
+		ann.add(new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, 0.1, 0.0, dropoutRate));
+		//ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
+		Layer mpl = new MaxPoolingLayer(20, imageSize - 5 + 1, 3, 3, eta, 0.0, dropoutRate);
+		ann.add(mpl);
+		ann.add(new DenseLayer(numberOfHiddenUnits, mpl.output_size, eta, 0.0, dropoutRate));
 		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
 		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
