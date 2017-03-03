@@ -50,6 +50,8 @@ class Perceptron {
 	public Instance[] tune;
 	public Instance[] test;
 	
+	public Perceptron(){delta = 0;};
+	
 	public Perceptron(double eta, int size, double alpha, int seed){
 		this.eta = eta;
 		w = new double[size];
@@ -91,6 +93,15 @@ class Perceptron {
 		}
 		return output;
 	}
+	
+	public double setSigmoidOutput(double wx) {
+		output = 1/(1 + Math.exp(-wx));
+		if (output == 1) {
+			System.out.println(Math.exp(-wx));
+			System.out.println("God save my sorry soul version 2!");
+		}
+		return output;
+	}
 }
 
 
@@ -110,6 +121,8 @@ abstract class Layer {
 	abstract public void updateWeights(double label, ArrayList<Double> layer_inputs);
 	// Update weights if this is an intermediate/first layer
 	abstract public void updateWeights(List<Double> layer_inputs, Layer nextLayer);
+	// Get the delta.w for all units of the current layer attached to a unit of the previous layer
+	abstract public double getDeltaW(int unit_index);
 }
 
 class DenseLayer extends Layer {
@@ -192,12 +205,17 @@ class DenseLayer extends Layer {
 			}
 			// calculate delta*w 
 			// unit[i] is connected to units in the nextLayer
-			double deltaw = 0;
-			for (int j = 0; j < nextLayer.output_size; j++) {
-				deltaw += nextLayer.units[j].delta * nextLayer.units[j].w[i];
-			}
+			double deltaw = nextLayer.getDeltaW(i);
 			units[i].sigmoidUpdateWeights(deltaw, layer_inputs);
 		}
+	}
+	
+	public double getDeltaW(int unit_index) {
+		double deltaw = 0;
+		for (int j = 0; j < this.output_size; j++) {
+			deltaw += units[j].delta * units[j].w[unit_index];
+		}
+		return deltaw;
 	}
 	
 //	public void updateEncodingWeights(Vector<Double> layer_inputs, Layer nextLayer) {
@@ -215,20 +233,40 @@ class DenseLayer extends Layer {
 
 class ConvolutionLayer extends Layer {
 	
-	int[] w;
-	int[] w_bias;
+	double[] w;
+	double w_bias;
+	int dimensions;
+	int convWindowSize;
+	int outputSideDim;
+	int noPlates;
+	int inputImageSize;
+	int unitsPerPlate;
 	
-	public ConvolutionLayer(int output_size, int input_size, double eta, double alpha, double dropout) {
-		this.output_size = output_size;
-		this.input_size = input_size;
+	public ConvolutionLayer(int no_plates, int inputImageSize, int conv_window_size, int dimension, double eta, double alpha, double dropout) {
+		this.inputImageSize = inputImageSize;
+		this.noPlates = no_plates;
+		this.outputSideDim = inputImageSize - 2*(int)Math.floor(conv_window_size/2);
+		this.output_size = outputSideDim * outputSideDim * no_plates;
+		this.convWindowSize = conv_window_size;
 		this.units = new Perceptron[output_size];
 		this.eta = eta;
 		this.alpha = alpha;
 		this.dropout = dropout;
-
+		this.dimensions = dimension;
+		this.unitsPerPlate = outputSideDim * outputSideDim;
+		
+		w = new double[conv_window_size * conv_window_size * noPlates * dimensions];
+		//Random rand = new Random(SEED);
+		Random rand = new Random(ANN.SEED);
+		w_bias = 0.02*rand.nextDouble() - 0.01;
+		for (int i = 0; i < w.length; i++) {
+			w[i] = 0.02*rand.nextDouble()-0.01;
+		}
 		
 		for (int i = 0; i < output_size; i++) {
-			units[i] = new Perceptron(eta, input_size, alpha, i);
+			units[i] = new Perceptron();
+			units[i].w = w;
+			units[i].w_bias = w_bias;
 
 		}
 		
@@ -240,20 +278,112 @@ class ConvolutionLayer extends Layer {
 
 	@Override
 	public void updateOutput(List<Double> values) {
-		// TODO Auto-generated method stub
+		// TODO: Add dropout!!
+		// Our output vector is formatted as follows
+		// o1p1 o1p2 o1p3 .... o2p1 o2p2 o2p3 ... p3p1 o3p2 o3p3 ...
+		// The w vector is also stored the same way
+		// w1p1d1 w1p1d2 w1p1s3 ... w1p2d1 w1p2d2 w1p2d3... w2p1d1 w2p1d2 w2p2d2...
+		for (int i = 0; i < outputSideDim; i++) {
+			for(int j = 0; j < outputSideDim; j++) {
+				for(int plate = 0; plate < noPlates; plate++){
+					// For each plate compute the outputs
+					// we are looking at unit (i,j) in the output of plate 'plate' 
+					// lets collect the weighted sum of corresponding input
+					// for every (i,j) in the output, the corresponding position in input is (i+window/2, j + window/2)
+					// So now loop over all those positions and compute the weighted sum 
+					
+					double wx = 0;
+					for (int k = i; k < i + convWindowSize; k++) {
+						for(int l = j; l < j + convWindowSize; l++) {
+							// First covert 2-D indexing to 1-D
+							int w_index = (((k-i)*this.convWindowSize + (l-j))*noPlates + plate)*dimensions;
+							// Note that (k,l) is the index in the input image
+							int image_index = (k)*this.inputImageSize + (l);
+							
+							// Now for all the input dimensions e.g dim=4 for color compute w.x
+							for (int offset = 0; offset < dimensions; offset++) {
+								wx += w[w_index + offset] * values.get(image_index + offset);
+							}
+							
+						}	
+					}
+					// Add bias
+					wx += w_bias*-1;
+					
+					// Now set the units output to the correct value
+					// Currently using SIGMOID
+					// First find the index of the unit in the units array
+					int unit_index = (i*outputSideDim + j)*noPlates + plate;
+					output.set(unit_index, units[unit_index].setSigmoidOutput(wx));				
+				}
+			}
+		}
+		
 		
 	}
 
 	@Override
 	public void updateWeights(double label, ArrayList<Double> layer_inputs) {
-		// TODO Auto-generated method stub
+		// Highly unlikely we are ever gonna use this one as the Conv layer hardly appears as the output layer
+		// of the ANN
 		
 	}
 
 	@Override
 	public void updateWeights(List<Double> layer_inputs, Layer nextLayer) {
-		// TODO Auto-generated method stub
-		
+		double[] netDelta = new double[w.length];
+		double netDeltaBias = 0;
+		for (int i = 0; i < output_size; i++) {
+//			if (dropped_units.contains(i)){
+//				continue;
+//			}
+			// calculate delta*w 
+			// unit[i] is connected to units in the nextLayer
+			double deltaw = nextLayer.getDeltaW(i);
+			units[i].delta = output.get(i)*(1-output.get(i))*deltaw;
+			
+			int plate = i%noPlates;
+			int x = (i/noPlates)/outputSideDim;
+			int y = (i/noPlates)%outputSideDim;
+			
+			for (int k = x; k < x + convWindowSize; k++) {
+				for (int l = y; l < y + convWindowSize; l++) {
+					// First covert 2-D indexing to 1-D
+					int w_index = (((k-x)*this.convWindowSize + (l-y))*noPlates + plate)*dimensions;
+					// Note that (k,l) is the index in the input image
+					int image_index = (k)*this.inputImageSize + (l);
+					// Now for all the input dimensions e.g dim=4 for color compute w.x
+					for (int offset = 0; offset < dimensions; offset++) {
+						netDelta[w_index + offset] += eta*layer_inputs.get(image_index) * units[i].delta;
+					}
+				}
+			}
+			netDeltaBias += units[i].delta;
+			
+		}
+		for (int i = 0; i < w.length; i++) {
+			w[i] += netDelta[i];
+		}
+		w_bias += eta*netDeltaBias*-1;
+	}
+
+	@Override
+	public double getDeltaW(int unit_index) {
+		// First convert unit_index to 2D coordinates
+		int x = (unit_index/dimensions) / inputImageSize;
+		int y = (unit_index/dimensions) % inputImageSize;
+		int dim = unit_index%dimensions;
+		double deltaw = 0;
+		// So this pixel influences the output of units from 
+		// (x-window + 1,y-window + 1) to (x, y) for each plate
+		for (int plate = 0; plate < noPlates; plate++) {
+			for (int i = x - convWindowSize + 1; i <= x; i++) {
+				for (int j = y - convWindowSize + 1; j <= y; j++) {
+					deltaw += w[(unit_index + plate)*dimensions + dim] * units[(i*outputSideDim + j)*noPlates + plate].delta;
+				}
+			}
+		}
+		return deltaw;
 	}
 }
 
@@ -369,7 +499,7 @@ public class Lab3 {
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
 	
 	private static final Boolean    useRGB = true; // If true, FOUR units are used per pixel: red, green, blue, and grey.  If false, only ONE (the grey-scale value).
-	private static       int unitsPerPixel = (useRGB ? 4 : 1); // If using RGB, use red+blue+green+grey.  Otherwise just use the grey value.
+	public static       int unitsPerPixel = (useRGB ? 4 : 1); // If using RGB, use red+blue+green+grey.  Otherwise just use the grey value.
 			
 	private static String    modelToUse = "oneLayer"; // Should be one of { "perceptrons", "oneLayer", "deep" };  You might want to use this if you are trying approaches other than a Deep ANN.
 	private static int       inputVectorSize;         // The provided code uses a 1D vector of input features.  You might want to create a 2D version for your Deep ANN code.  
@@ -712,7 +842,9 @@ public class Lab3 {
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
         //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		ANN ann = new ANN(trainFeatureVectors);
-		ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
+		ann.add(new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, eta, 0.0, dropoutRate));
+		ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
+		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
 		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
