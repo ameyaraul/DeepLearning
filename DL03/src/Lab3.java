@@ -234,7 +234,7 @@ class DenseLayer extends Layer {
 class ConvolutionLayer extends Layer {
 	
 	double[] w;
-	double w_bias;
+	double[] w_bias;
 	int dimensions;
 	int convWindowSize;
 	int outputSideDim;
@@ -256,9 +256,11 @@ class ConvolutionLayer extends Layer {
 		this.unitsPerPlate = outputSideDim * outputSideDim;
 		
 		w = new double[conv_window_size * conv_window_size * noPlates * dimensions];
+		w_bias = new double[noPlates];
 		//Random rand = new Random(SEED);
 		Random rand = new Random(ANN.SEED);
-		w_bias = 0.02*rand.nextDouble() - 0.01;
+		for (int i= 0; i < noPlates; i++)
+			w_bias[i] = 0.02*rand.nextDouble() - 0.01;
 		for (int i = 0; i < w.length; i++) {
 			w[i] = 0.02*rand.nextDouble()-0.01;
 		}
@@ -266,7 +268,8 @@ class ConvolutionLayer extends Layer {
 		for (int i = 0; i < output_size; i++) {
 			units[i] = new Perceptron();
 			units[i].w = w;
-			units[i].w_bias = w_bias;
+			
+			units[i].w_bias = w_bias[i%noPlates];
 
 		}
 		
@@ -302,13 +305,13 @@ class ConvolutionLayer extends Layer {
 							
 							// Now for all the input dimensions e.g dim=4 for color compute w.x
 							for (int offset = 0; offset < dimensions; offset++) {
-								wx += w[w_index + offset] * values.get(image_index + offset);
+								wx += w[w_index + offset] * values.get(image_index*dimensions + offset);
 							}
 							
 						}	
 					}
 					// Add bias
-					wx += w_bias*-1;
+					wx += w_bias[plate]*-1;
 					
 					// Now set the units output to the correct value
 					// Currently using SIGMOID
@@ -332,7 +335,7 @@ class ConvolutionLayer extends Layer {
 	@Override
 	public void updateWeights(List<Double> layer_inputs, Layer nextLayer) {
 		double[] netDelta = new double[w.length];
-		double netDeltaBias = 0;
+		double[] netDeltaBias = new double[noPlates];
 		for (int i = 0; i < output_size; i++) {
 			// TODO: Fix this when we add dropout
 //			if (dropped_units.contains(i)){
@@ -352,20 +355,22 @@ class ConvolutionLayer extends Layer {
 					// First covert 2-D indexing to 1-D
 					int w_index = (((k-x)*this.convWindowSize + (l-y))*noPlates + plate)*dimensions;
 					// Note that (k,l) is the index in the input image
+					// Remember to add dimension offset
 					int image_index = (k)*this.inputImageSize + (l);
 					// Now for all the input dimensions e.g dim=4 for color compute w.x
 					for (int offset = 0; offset < dimensions; offset++) {
-						netDelta[w_index + offset] += eta*layer_inputs.get(image_index) * units[i].delta;
+						netDelta[w_index + offset] += eta*layer_inputs.get(image_index*dimensions + offset) * units[i].delta;
 					}
 				}
 			}
-			netDeltaBias += units[i].delta;
+			netDeltaBias[plate] += units[i].delta;
 			
 		}
 		for (int i = 0; i < w.length; i++) {
 			w[i] += netDelta[i];
 		}
-		w_bias += eta*netDeltaBias*-1;
+		for (int i = 0; i < noPlates; i++)
+			w_bias[i] += eta*netDeltaBias[i]*-1;
 	}
 
 	@Override
@@ -445,8 +450,8 @@ class MaxPoolingLayer extends Layer {
 					// So now loop over all those positions and compute the weighted sum 
 					
 					double max = 0;
-					for (int k = i; k < i + windowSize; k++) {
-						for(int l = j; l < j + windowSize; l++) {
+					for (int k = i*windowStride; k < i*windowStride + windowSize; k++) {
+						for(int l = j*windowStride; l < j*windowStride + windowSize; l++) {
 							// First covert 2-D indexing to 1-D
 							// Note that (k,l) is the index in the input image
 							int image_index = ((k)*this.inputImageSize + (l))*inputDimensions;
@@ -498,17 +503,12 @@ class MaxPoolingLayer extends Layer {
 		double deltaw = 0;
 		// So this pixel influences the output of units from 
 		// (x-window + 1,y-window + 1) to (x, y) for each plate
+		int i = x/windowStride;
+		int j = y/windowStride;
 
-		for (int i = x - windowSize + 1; i <= x; i++) {
-			if (!(i >=0 && i <outputSideDim))
-				continue;
-			for (int j = y - windowSize + 1; j <= y; j++) {
-				if (!(j>=0 && j <outputSideDim))
-					continue;
-				if (Math.abs(output.get((i*outputSideDim + j)*noPlates + plate) - inputValues.get(unit_index)) < 0.0001)
-					deltaw += nextLayer.getDeltaW((i*outputSideDim + j)*noPlates + plate);
-			}
-		}
+		if (Math.abs(output.get((i*outputSideDim + j)*noPlates + plate) - inputValues.get(unit_index)) < 0.0001)
+			deltaw += nextLayer.getDeltaW((i*outputSideDim + j)*noPlates + plate);
+
 
 		return deltaw;
 		
@@ -622,7 +622,7 @@ class ANN {
 
 public class Lab3 {
     
-	private static int     imageSize = 32; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
+	private static int     imageSize = 8; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
 	                                       // You might want to resize to 8x8, 16x16, 32x32, or 64x64; this can reduce your network size and speed up debugging runs.
 	                                       // ALL IMAGES IN A TRAINING RUN SHOULD BE THE *SAME* SIZE.
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
@@ -636,7 +636,7 @@ public class Lab3 {
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
 	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.00; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
-	private static int    maxEpochs = 1000; // Feel free to set to a different value.
+	private static int    maxEpochs = 12000; // Feel free to set to a different value.
 
 	public static void main(String[] args) {
 		String trainDirectory = "trainset/";
@@ -976,11 +976,11 @@ public class Lab3 {
 		//ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
 		Layer mpl = new MaxPoolingLayer(20, imageSize - 5 + 1, 2, 2, eta, 0.0, dropoutRate);
 		ann.add(mpl);
-		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 5, 20, eta, 0.0, dropoutRate);
-		ann.add(conv2);
+		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, eta, 0.0, dropoutRate);
+		//ann.add(conv2);
 		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, dropoutRate);
-		ann.add(mpl2);
-		ann.add(new DenseLayer(numberOfHiddenUnits, mpl2.output_size, eta, 0.0, dropoutRate));
+		//ann.add(mpl2);
+		ann.add(new DenseLayer(numberOfHiddenUnits, mpl.output_size, eta, 0.0, dropoutRate));
 		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
 		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
