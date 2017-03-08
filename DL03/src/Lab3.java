@@ -20,11 +20,15 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Vector;
 
 import javax.imageio.ImageIO;
+
+
 
 
 
@@ -102,6 +106,41 @@ class Perceptron {
 		}
 		return output;
 	}
+	
+	
+	public void reluUpdateWeights(double deltaw, List<Double> inputs) {
+		delta_prev = delta;
+		if (output>=0)
+			output=1;
+		else
+			output =0.01;
+		
+		delta = output*deltaw;
+		for (int i = 0; i < inputs.size(); i++) {
+			w[i] += eta*inputs.get(i) * delta + alpha*delta_prev;
+		}
+		w_bias += eta*delta*-1 + alpha*delta_prev;
+	}
+	
+	public double getRELUOutput(List<Double> values) {
+		double wx = getwx(values);
+		//using a leaky RELU
+		double alpha=0.01;
+		if (wx>=0) {
+			alpha =1.0;
+		}
+		
+		return alpha*wx;
+	}
+	
+	public double setRELUOutput(double wx) {
+		double alpha=0.01;
+		if (wx>=0) {
+			alpha =1.0;
+		}
+		
+		return alpha*wx;
+	}
 }
 
 
@@ -113,6 +152,7 @@ abstract class Layer {
 	double eta;
 	double alpha;
 	double dropout;
+	String activationFunction;
 	public ArrayList<Double> output;
 	
 	// Update outputs of the layer
@@ -129,13 +169,14 @@ class DenseLayer extends Layer {
 	
 	boolean[] toDrop;
 	
-	public DenseLayer(int output_size, int input_size, double eta, double alpha, double dropout) {
+	public DenseLayer(int output_size, int input_size, double eta, double alpha, double dropout,String activation) {
 		this.output_size = output_size;
 		this.input_size = input_size;
 		this.units = new Perceptron[output_size];
 		this.eta = eta;
 		this.alpha = alpha;
 		this.dropout = dropout;
+		this.activationFunction =activation;
 		
 		for (int i = 0; i < output_size; i++) {
 			units[i] = new Perceptron(eta, input_size, alpha, i);
@@ -181,7 +222,14 @@ class DenseLayer extends Layer {
 //				output.set(i, 0.0);
 //				continue;
 //			}
-			output.set(i, units[i].getSigmoidOutput(values));
+			if (activationFunction.equalsIgnoreCase("relu") 	) {
+
+				output.set(i, units[i].getRELUOutput(values));
+			}
+			else{
+				output.set(i, units[i].getSigmoidOutput(values));
+			}
+			
 		}
 	}
 	
@@ -198,8 +246,14 @@ class DenseLayer extends Layer {
 			}
 //			if (dropped_units.contains(i)){
 //				continue;
-//			}
-			units[i].sigmoidUpdateWeights(labels.get(i) - units[i].output, layer_inputs);
+//			}	
+			if (activationFunction.equalsIgnoreCase("relu") 	) {
+				units[i].reluUpdateWeights(labels.get(i) - units[i].output, layer_inputs);
+			}
+			else {
+				units[i].sigmoidUpdateWeights(labels.get(i) - units[i].output, layer_inputs);
+			}
+			
 		}
 	}
 	
@@ -215,7 +269,13 @@ class DenseLayer extends Layer {
 			double y = 0;
 			if (label == i) 
 				y = 1;
-			units[i].sigmoidUpdateWeights(y - units[i].output, layer_inputs);
+			if (activationFunction.equalsIgnoreCase("relu") 	) {
+				units[i].reluUpdateWeights(y - units[i].output, layer_inputs);
+			}
+			else {
+				units[i].sigmoidUpdateWeights(y - units[i].output, layer_inputs);
+			}
+			
 		}
 	}
 	
@@ -231,7 +291,13 @@ class DenseLayer extends Layer {
 			// calculate delta*w 
 			// unit[i] is connected to units in the nextLayer
 			double deltaw = nextLayer.getDeltaW(i);
-			units[i].sigmoidUpdateWeights(deltaw, layer_inputs);
+			if (activationFunction.equalsIgnoreCase("relu") 	) {
+				units[i].reluUpdateWeights(deltaw, layer_inputs);
+			}
+			else {
+				units[i].sigmoidUpdateWeights(deltaw, layer_inputs);
+			}
+			
 		}
 	}
 	
@@ -566,12 +632,60 @@ class ANN {
 	Vector<Vector<Double>> train;
 	Vector<Vector<Double>> tune;
 	Vector<Vector<Double>> test;
-	
+	int[][] confusionMatrix; 
 	public ANN(Vector<Vector<Double>> train) {
 		this.layers = new ArrayList<Layer>();
 		this.train = train;
+		
 	}
+	public void printConfusionMatrix() {
 	
+		System.out.println("Confusion Matrix:");
+
+		System.out.print("                 ");
+		for (String cat:Lab3.enumMap.values()) {
+			System.out.printf("    %s",cat.trim());
+		
+		}	
+		System.out.println();
+		for (int ind1:Lab3.enumMap.keySet()) {
+			String cat1= Lab3.enumMap.get(ind1)	;
+			System.out.printf("%-21s",cat1);	
+
+			
+				
+				int counter=0; 
+				for(int ind2: Lab3.enumMap.keySet()) {
+					int iData =  this.confusionMatrix[ind1][ind2];
+					String data  = Integer.toString(iData);
+					String cat2= Lab3.enumMap.get(ind2);
+
+
+					int colLength = cat2.length();					
+					int dataLength = data.length();
+					int remLength = colLength-dataLength;
+					
+					if (counter==0) {						
+						System.out.print(data);
+						for (int j=0;j<remLength;j++) {
+							System.out.print(" ");
+						}
+					}
+					else {
+						System.out.print("    ");
+						System.out.print(data);
+						for (int j=0;j<remLength;j++) {
+							System.out.print(" ");
+						}
+					}
+					counter++;	
+				}
+			
+			System.out.println();
+		}
+}
+
+
 	public ANN(double eta, double alpha, int noEpochs, int[] layer_sizes, double[] dropouts, int input_size, Vector<Vector<Double>> train, 
 			Vector<Vector<Double>> tune, Vector<Vector<Double>> test) {
 		this.eta = eta;
@@ -585,10 +699,11 @@ class ANN {
 		
 		for (int i = 0; i < layer_sizes.length; i++) {
 			if (i == 0)
-				layers.add(new DenseLayer(layer_sizes[i], train.get(0).size(), eta, alpha, dropouts[i]));
+				layers.add(new DenseLayer(layer_sizes[i], train.get(0).size(), eta, alpha, dropouts[i],"sigmoid"));
 			else
-				layers.add(new DenseLayer(layer_sizes[i], layers.get(i-1).output_size, eta, alpha, dropouts[i]));
+				layers.add(new DenseLayer(layer_sizes[i], layers.get(i-1).output_size, eta, alpha, dropouts[i],"sigmoid"));
 		}
+
 	}
 	
 	public void add(Layer layer) {
@@ -625,6 +740,7 @@ class ANN {
 	
 	public double getAccuracy(Vector<Vector<Double>> samples){
 		double acc = 0;
+		this.confusionMatrix = new int [Lab3.enumMap.keySet().size()] [Lab3.enumMap.keySet().size()];
 		for(Vector<Double> sample : samples) {
 			ArrayList<Double> y_label = this.getLabel(sample);
 			// We use Least Squares Loss for comparing the 
@@ -634,8 +750,22 @@ class ANN {
 			if (ind == y_ind) {
 				acc++;
 			}
+			this.confusionMatrix[ind][y_ind]+=1;
 		}
 		return (double)acc/samples.size();
+	}
+	
+	public void updateConfusionMatrix(Vector<Vector<Double>> samples) {
+		/*INitializing hashmap*/
+		this.confusionMatrix = new int [Lab3.enumMap.keySet().size()] [Lab3.enumMap.keySet().size()];
+
+		for(Vector<Double> sample : samples) {
+			ArrayList<Double> y_label = this.getLabel(sample);
+			int y_ind = y_label.indexOf(Collections.max(y_label));
+			int ind = sample.get(sample.size() - 1).intValue();
+			this.confusionMatrix[ind][y_ind]+=1;
+
+		}
 	}
 	
 	public ArrayList<Double> getLabel(Vector<Double> inst) {
@@ -664,16 +794,21 @@ public class Lab3 {
 	                                       // You might want to resize to 8x8, 16x16, 32x32, or 64x64; this can reduce your network size and speed up debugging runs.
 	                                       // ALL IMAGES IN A TRAINING RUN SHOULD BE THE *SAME* SIZE.
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
-	
+	public static HashMap<Integer,String> enumMap = new HashMap<Integer,String>();
+	static {
+		for (Category cat:Category.values() ) {
+			enumMap.put(cat.ordinal(), cat.name());
+		}
+	}
 	private static final Boolean    useRGB = true; // If true, FOUR units are used per pixel: red, green, blue, and grey.  If false, only ONE (the grey-scale value).
 	public static       int unitsPerPixel = (useRGB ? 4 : 1); // If using RGB, use red+blue+green+grey.  Otherwise just use the grey value.
 			
-	private static String    modelToUse = "oneLayer"; // Should be one of { "perceptrons", "oneLayer", "deep" };  You might want to use this if you are trying approaches other than a Deep ANN.
+	private static String    modelToUse = "deep"; // Should be one of { "perceptrons", "oneLayer", "deep" };  You might want to use this if you are trying approaches other than a Deep ANN.
 	private static int       inputVectorSize;         // The provided code uses a 1D vector of input features.  You might want to create a 2D version for your Deep ANN code.  
 	                                                  // Or use the get2DfeatureValue() 'accessor function' that maps 2D coordinates into the 1D vector.  
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
-	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.2; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
+	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.0; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
 	private static int    maxEpochs = 12000; // Feel free to set to a different value.
 
 	public static void main(String[] args) {
@@ -766,6 +901,8 @@ public class Lab3 {
 		if ("watch".equals(name))       return Category.watch;
 		throw new Error("Unknown category: " + name);		
 	}
+	
+	
 
 	private static double getRandomWeight(int fanin, int fanout) { // This is one 'rule of thumb' for initializing weights.  Fine for perceptrons and one-layer ANN at least.
 		double range = Math.max(Double.MIN_VALUE, 4.0 / Math.sqrt(6.0 * (fanin + fanout)));
@@ -1009,18 +1146,8 @@ public class Lab3 {
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
         //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		ANN ann = new ANN(trainFeatureVectors);
-		Layer conv1 = new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, 0.1, 0.0, dropoutRate);
-		ann.add(conv1);
-		//ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
-		Layer mpl = new MaxPoolingLayer(20, (int)Math.sqrt(conv1.output_size/20), 2, 2, eta, 0.0, dropoutRate);
-		ann.add(mpl);
-		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, dropoutRate);
-		ann.add(conv2);
-		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, dropoutRate);
-		//ann.add(mpl2);
-		ann.add(new DenseLayer(numberOfHiddenUnits, conv2.output_size, eta, 0.0, dropoutRate));
-		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
-		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate));
+		ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate,"sigmoid"));
+		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate,"sigmoid"));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
 
@@ -1057,8 +1184,51 @@ public class Lab3 {
 
 
 	private static int trainDeep(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors,	Vector<Vector<Double>> testFeatureVectors) {
-		// You need to implement this method!
-		return -1;
+		long overallStart   = System.currentTimeMillis(), start = overallStart;
+        int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
+        //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
+		ANN ann = new ANN(trainFeatureVectors);
+		Layer conv1 = new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, 0.1, 0.0, dropoutRate);
+		ann.add(conv1);
+		//ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
+		Layer mpl = new MaxPoolingLayer(20, (int)Math.sqrt(conv1.output_size/20), 2, 2, eta, 0.0, dropoutRate);
+		ann.add(mpl);
+		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, dropoutRate);
+		ann.add(conv2);
+		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, dropoutRate);
+		//ann.add(mpl2);
+		ann.add(new DenseLayer(numberOfHiddenUnits, conv2.output_size, eta, 0.0, dropoutRate,"relu"));
+		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
+		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate,"relu"));
+        for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
+			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
+
+            ann.trainANN();
+            
+            
+            if (epoch%50==0) {
+            	double tuneAcc = ann.getAccuracy(tuneFeatureVectors);
+            	
+            	if ((1-tuneAcc) <=best_tuneSetErrors) {
+            		best_tuneSetErrors=(int) (1-tuneAcc);
+            		double testAcc = ann.getAccuracy(testFeatureVectors);
+            		testSetErrorsAtBestTune=(int) (1-testAcc);
+            		//ann.updateConfusionMatrix(testFeatureVectors);
+            		best_epoch =epoch;
+            		ann.printConfusionMatrix();
+
+            	}
+            }
+
+	        System.out.println("Done with Epoch # " + comma(epoch) + ".  Took " + convertMillisecondsToTimeSpan(System.currentTimeMillis() - start) + " (" + convertMillisecondsToTimeSpan(System.currentTimeMillis() - overallStart) + " overall).");
+	        reportOneLayerConfig(); // Print out some info after epoch, so you can see what experiment is running in a given console.
+	        
+	        start = System.currentTimeMillis();
+		}
+		
+		System.out.println("\n***** Best tuneset errors = " + comma(best_tuneSetErrors) + " of " + comma(tuneFeatureVectors.size()) + " (" + truncate((100.0 *      best_tuneSetErrors) / tuneFeatureVectors.size(), 2) + "%) at epoch = " + comma(best_epoch) 
+		                    + " (testset errors = "    + comma(testSetErrorsAtBestTune) + " of " + comma(testFeatureVectors.size()) + ", " + truncate((100.0 * testSetErrorsAtBestTune) / testFeatureVectors.size(), 2) + "%).\n");
+    	return testSetErrorsAtBestTune;
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////////
