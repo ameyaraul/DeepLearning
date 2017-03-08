@@ -128,6 +128,7 @@ abstract class Layer {
 class DenseLayer extends Layer {
 	
 	boolean[] toDrop;
+	Random randGen;
 	
 	public DenseLayer(int output_size, int input_size, double eta, double alpha, double dropout) {
 		this.output_size = output_size;
@@ -147,13 +148,14 @@ class DenseLayer extends Layer {
 		}
 		
 		toDrop = new boolean[output_size];
+		randGen = new Random(ANN.SEED);
 	}
 	
 	@Override
 	public void updateOutput(List<Double> values){
 		//int noToDrop = (int)Math.floor(dropout*output_size);
 		//dropped_units = new ArrayList<Integer>(noToDrop);
-		Random randGen = new Random();
+		
 		// New dropout logic
 		
 		
@@ -267,6 +269,7 @@ class ConvolutionLayer extends Layer {
 	int inputImageSize;
 	int unitsPerPlate;
 	boolean[] toDrop;
+	Random rand;
 	
 	public ConvolutionLayer(int no_plates, int inputImageSize, int conv_window_size, int dimension, double eta, double alpha, double dropout) {
 		this.inputImageSize = inputImageSize;
@@ -281,10 +284,11 @@ class ConvolutionLayer extends Layer {
 		this.dimensions = dimension;
 		this.unitsPerPlate = outputSideDim * outputSideDim;
 		
+		
 		w = new double[conv_window_size * conv_window_size * noPlates * dimensions];
 		w_bias = new double[noPlates];
 		//Random rand = new Random(SEED);
-		Random rand = new Random(ANN.SEED);
+		rand = new Random(ANN.SEED);
 		for (int i= 0; i < noPlates; i++)
 			w_bias[i] = 0.2*rand.nextDouble() - 0.1;
 		for (int i = 0; i < w.length; i++) {
@@ -314,17 +318,18 @@ class ConvolutionLayer extends Layer {
 		// o1p1 o1p2 o1p3 .... o2p1 o2p2 o2p3 ... p3p1 o3p2 o3p3 ...
 		// The w vector is also stored the same way
 		// w1p1d1 w1p1d2 w1p1s3 ... w1p2d1 w1p2d2 w1p2d3... w2p1d1 w2p1d2 w2p2d2...
-		Random rnd = new Random();
 		for (int i = 0; i < outputSideDim; i++) {
 			for(int j = 0; j < outputSideDim; j++) {
 				for(int plate = 0; plate < noPlates; plate++){
 					// First find the index of the unit in the units array
 					int unit_index = (i*outputSideDim + j)*noPlates + plate;
 					// Now check for dropout
-					if (rnd.nextDouble() > dropout) {
+					if (rand.nextDouble() > dropout) {
 						this.toDrop[unit_index] = false;
 					} else {
 						this.toDrop[unit_index] = true;
+						output.set(unit_index,0.0);
+						units[unit_index].output = 0;
 						continue;
 					}
 					// For each plate compute the outputs
@@ -376,6 +381,7 @@ class ConvolutionLayer extends Layer {
 		for (int i = 0; i < output_size; i++) {
 			// Check for dropout first
 			if (this.toDrop[i]) {
+				netDelta[i] = 0;
 				continue;
 			}
 			// calculate delta*w 
@@ -673,7 +679,7 @@ public class Lab3 {
 	                                                  // Or use the get2DfeatureValue() 'accessor function' that maps 2D coordinates into the 1D vector.  
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
-	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.2; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
+	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.0; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
 	private static int    maxEpochs = 12000; // Feel free to set to a different value.
 
 	public static void main(String[] args) {
@@ -1017,10 +1023,10 @@ public class Lab3 {
 		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, dropoutRate);
 		ann.add(conv2);
 		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, dropoutRate);
-		//ann.add(mpl2);
-		ann.add(new DenseLayer(numberOfHiddenUnits, conv2.output_size, eta, 0.0, dropoutRate));
+		ann.add(mpl2);
+		ann.add(new DenseLayer(numberOfHiddenUnits, mpl2.output_size, eta, 0.0, dropoutRate));
 		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
-		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate));
+		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, 0));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
 
