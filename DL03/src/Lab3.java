@@ -747,12 +747,28 @@ class ANN {
 			// label outputted by the ANN and the sample's label
 			int y_ind = y_label.indexOf(Collections.max(y_label));
 			int ind = sample.get(sample.size() - 1).intValue();
-			if (ind == y_ind) {
+			if (ind != y_ind) {
 				acc++;
 			}
 			//this.confusionMatrix[ind][y_ind]+=1;
 		}
 		return (double)acc/samples.size();
+	}
+	public int getMistakes(Vector<Vector<Double>> samples){
+		int mis = 0;
+		//this.confusionMatrix = new int [Lab3.enumMap.keySet().size()] [Lab3.enumMap.keySet().size()];
+		for(Vector<Double> sample : samples) {
+			ArrayList<Double> y_label = this.getLabel(sample);
+			// We use Least Squares Loss for comparing the 
+			// label outputted by the ANN and the sample's label
+			int y_ind = y_label.indexOf(Collections.max(y_label));
+			int ind = sample.get(sample.size() - 1).intValue();
+			if (ind != y_ind) {
+				mis++;
+			}
+			//this.confusionMatrix[ind][y_ind]+=1;
+		}
+		return mis;
 	}
 	
 	public void updateConfusionMatrix(Vector<Vector<Double>> samples) {
@@ -790,7 +806,7 @@ class ANN {
 
 public class Lab3 {
     
-	private static int     imageSize = 16; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
+	private static int     imageSize = 8; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
 	                                       // You might want to resize to 8x8, 16x16, 32x32, or 64x64; this can reduce your network size and speed up debugging runs.
 	                                       // ALL IMAGES IN A TRAINING RUN SHOULD BE THE *SAME* SIZE.
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
@@ -1139,7 +1155,7 @@ public class Lab3 {
 	////////////////////////////////////////////////////////////////////////////////////////////////   ONE HIDDEN LAYER
 
 	private static boolean debugOneLayer               = false;  // If set true, more things checked and/or printed (which does slow down the code).
-	private static int    numberOfHiddenUnits          = 50;
+	private static int    numberOfHiddenUnits          = 300;
 	
 	private static int trainOneHU(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors, Vector<Vector<Double>> testFeatureVectors) {
 	    long overallStart   = System.currentTimeMillis(), start = overallStart;
@@ -1207,15 +1223,15 @@ public class Lab3 {
             
             
             if (epoch%50 == 0) {
-            	double tuneAcc = ann.getAccuracy(tuneFeatureVectors);
-            	
-            	if ((1-tuneAcc) <=best_tuneSetErrors) {
-            		best_tuneSetErrors=(int) (1-tuneAcc);
-            		double testAcc = ann.getAccuracy(testFeatureVectors);
-            		testSetErrorsAtBestTune=(int) (1-testAcc);
+            	int tuneErrors = ann.getMistakes(tuneFeatureVectors);
+            	System.out.println(tuneErrors);
+            	if (tuneErrors <=best_tuneSetErrors) {
+            		best_tuneSetErrors= tuneErrors;
+            		int testErrors = ann.getMistakes(testFeatureVectors);
+            		testSetErrorsAtBestTune=testErrors;
             		ann.updateConfusionMatrix(testFeatureVectors);
-            		best_epoch =epoch;
             		ann.printConfusionMatrix();
+            		best_epoch =epoch;
 
             	}
             }
