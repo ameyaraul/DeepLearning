@@ -127,6 +127,8 @@ abstract class Layer {
 
 class DenseLayer extends Layer {
 	
+	boolean[] toDrop;
+	
 	public DenseLayer(int output_size, int input_size, double eta, double alpha, double dropout) {
 		this.output_size = output_size;
 		this.input_size = input_size;
@@ -143,28 +145,42 @@ class DenseLayer extends Layer {
 		for (int i = 0; i < output_size; i++) {
 			output.add(i, 0.0); 
 		}
+		
+		toDrop = new boolean[output_size];
 	}
 	
 	@Override
 	public void updateOutput(List<Double> values){
-		int noToDrop = (int)Math.floor(dropout*output_size);
-		dropped_units = new ArrayList<Integer>(noToDrop);
-		Random randGen = new Random(ANN.SEED);
-		for (int j = 0; j < noToDrop; j++) {
-			int unit_no = randGen.nextInt(noToDrop);
-			if(dropped_units.contains(unit_no))
-				j--;
-			else {
-				dropped_units.add(unit_no);
-			}
-		}
+		//int noToDrop = (int)Math.floor(dropout*output_size);
+		//dropped_units = new ArrayList<Integer>(noToDrop);
+		Random randGen = new Random();
+		// New dropout logic
+		
+		
+		// Commenting out old drop out logic as new one is added above
+//		for (int j = 0; j < noToDrop; j++) {
+//			int unit_no = randGen.nextInt(noToDrop);
+//			if(dropped_units.contains(unit_no))
+//				j--;
+//			else {
+//				dropped_units.add(unit_no);
+//			}
+//		}
 
 		for (int i = 0 ; i < output_size; i++) {
-			if (dropped_units.contains(i)) {
+			if (randGen.nextDouble() > dropout) {
+				toDrop[i] = false;
+			} else {
+				toDrop[i] = true;
 				units[i].output = 0;
 				output.set(i, 0.0);
 				continue;
 			}
+//			if (dropped_units.contains(i)) {
+//				units[i].output = 0;
+//				output.set(i, 0.0);
+//				continue;
+//			}
 			output.set(i, units[i].getSigmoidOutput(values));
 		}
 	}
@@ -177,9 +193,12 @@ class DenseLayer extends Layer {
 	
 	public void updateWeights(ArrayList<Double> labels, ArrayList<Double> layer_inputs) {
 		for (int i = 0; i < output_size; i++) {
-			if (dropped_units.contains(i)){
+			if (toDrop[i]) {
 				continue;
 			}
+//			if (dropped_units.contains(i)){
+//				continue;
+//			}
 			units[i].sigmoidUpdateWeights(labels.get(i) - units[i].output, layer_inputs);
 		}
 	}
@@ -187,9 +206,12 @@ class DenseLayer extends Layer {
 	@Override
 	public void updateWeights(double label, ArrayList<Double> layer_inputs) {
 		for (int i = 0; i < output_size; i++) {
-			if (dropped_units.contains(i)){
+			if (toDrop[i]) {
 				continue;
 			}
+//			if (dropped_units.contains(i)){
+//				continue;
+//			}
 			double y = 0;
 			if (label == i) 
 				y = 1;
@@ -200,9 +222,12 @@ class DenseLayer extends Layer {
 	@Override
 	public void updateWeights(List<Double> layer_inputs, Layer nextLayer) {
 		for (int i = 0; i < output_size; i++) {
-			if (dropped_units.contains(i)){
+			if (toDrop[i]) {
 				continue;
 			}
+//			if (dropped_units.contains(i)){
+//				continue;
+//			}
 			// calculate delta*w 
 			// unit[i] is connected to units in the nextLayer
 			double deltaw = nextLayer.getDeltaW(i);
@@ -241,6 +266,7 @@ class ConvolutionLayer extends Layer {
 	int noPlates;
 	int inputImageSize;
 	int unitsPerPlate;
+	boolean[] toDrop;
 	
 	public ConvolutionLayer(int no_plates, int inputImageSize, int conv_window_size, int dimension, double eta, double alpha, double dropout) {
 		this.inputImageSize = inputImageSize;
@@ -277,6 +303,8 @@ class ConvolutionLayer extends Layer {
 		for (int i = 0; i < output_size; i++) {
 			output.add(i, 0.0); 
 		}
+		
+		toDrop = new boolean[output_size];
 	}
 
 	@Override
@@ -286,9 +314,19 @@ class ConvolutionLayer extends Layer {
 		// o1p1 o1p2 o1p3 .... o2p1 o2p2 o2p3 ... p3p1 o3p2 o3p3 ...
 		// The w vector is also stored the same way
 		// w1p1d1 w1p1d2 w1p1s3 ... w1p2d1 w1p2d2 w1p2d3... w2p1d1 w2p1d2 w2p2d2...
+		Random rnd = new Random();
 		for (int i = 0; i < outputSideDim; i++) {
 			for(int j = 0; j < outputSideDim; j++) {
 				for(int plate = 0; plate < noPlates; plate++){
+					// First find the index of the unit in the units array
+					int unit_index = (i*outputSideDim + j)*noPlates + plate;
+					// Now check for dropout
+					if (rnd.nextDouble() > dropout) {
+						this.toDrop[unit_index] = false;
+					} else {
+						this.toDrop[unit_index] = true;
+						continue;
+					}
 					// For each plate compute the outputs
 					// we are looking at unit (i,j) in the output of plate 'plate' 
 					// lets collect the weighted sum of corresponding input
@@ -315,8 +353,7 @@ class ConvolutionLayer extends Layer {
 					
 					// Now set the units output to the correct value
 					// Currently using SIGMOID
-					// First find the index of the unit in the units array
-					int unit_index = (i*outputSideDim + j)*noPlates + plate;
+					
 					output.set(unit_index, units[unit_index].setSigmoidOutput(wx));				
 				}
 			}
@@ -337,10 +374,10 @@ class ConvolutionLayer extends Layer {
 		double[] netDelta = new double[w.length];
 		double[] netDeltaBias = new double[noPlates];
 		for (int i = 0; i < output_size; i++) {
-			// TODO: Fix this when we add dropout
-//			if (dropped_units.contains(i)){
-//				continue;
-//			}
+			// Check for dropout first
+			if (this.toDrop[i]) {
+				continue;
+			}
 			// calculate delta*w 
 			// unit[i] is connected to units in the nextLayer
 			double deltaw = nextLayer.getDeltaW(i);
@@ -636,7 +673,7 @@ public class Lab3 {
 	                                                  // Or use the get2DfeatureValue() 'accessor function' that maps 2D coordinates into the 1D vector.  
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
-	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.00; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
+	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.2; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
 	private static int    maxEpochs = 12000; // Feel free to set to a different value.
 
 	public static void main(String[] args) {
