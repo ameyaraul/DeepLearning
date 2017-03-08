@@ -113,7 +113,7 @@ class Perceptron {
 		if (output>=0)
 			output=1;
 		else
-			output =0.01;
+			output =0.001;
 		
 		delta = output*deltaw;
 		for (int i = 0; i < inputs.size(); i++) {
@@ -125,21 +125,13 @@ class Perceptron {
 	public double getRELUOutput(List<Double> values) {
 		double wx = getwx(values);
 		//using a leaky RELU
-		double alpha=0.01;
-		if (wx>=0) {
-			alpha =1.0;
-		}
-		
-		return alpha*wx;
+		double alpha=0.001;
+		return Math.max(alpha*wx, wx);
 	}
 	
 	public double setRELUOutput(double wx) {
-		double alpha=0.01;
-		if (wx>=0) {
-			alpha =1.0;
-		}
-		
-		return alpha*wx;
+		double alpha=0.001;
+		return Math.max(alpha*wx, wx);
 	}
 }
 
@@ -747,7 +739,7 @@ class ANN {
 			// label outputted by the ANN and the sample's label
 			int y_ind = y_label.indexOf(Collections.max(y_label));
 			int ind = sample.get(sample.size() - 1).intValue();
-			if (ind != y_ind) {
+			if (ind == y_ind) {
 				acc++;
 			}
 			//this.confusionMatrix[ind][y_ind]+=1;
@@ -806,7 +798,7 @@ class ANN {
 
 public class Lab3 {
     
-	private static int     imageSize = 8; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
+	private static int     imageSize = 16; // Images are imageSize x imageSize.  The provided data is 128x128, but this can be resized by setting this value (or passing in an argument).  
 	                                       // You might want to resize to 8x8, 16x16, 32x32, or 64x64; this can reduce your network size and speed up debugging runs.
 	                                       // ALL IMAGES IN A TRAINING RUN SHOULD BE THE *SAME* SIZE.
 	private static enum    Category { airplanes, butterfly, flower, grand_piano, starfish, watch };  // We'll hardwire these in, but more robust code would not do so.
@@ -825,7 +817,7 @@ public class Lab3 {
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
 	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.0; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
-	private static int    maxEpochs = 1000; // Feel free to set to a different value.
+	private static int    maxEpochs = 3000; // Feel free to set to a different value.
 
 	public static void main(String[] args) {
 		String trainDirectory = "trainset/";
@@ -924,7 +916,11 @@ public class Lab3 {
 		double range = Math.max(Double.MIN_VALUE, 4.0 / Math.sqrt(6.0 * (fanin + fanout)));
 		return (2.0 * random() - 1.0) * range;
 	}
-	
+	private static double getRandomRELUWeight(int fanin, int fanout) { // This is one 'rule of thumb' for initializing weights.  Fine for perceptrons and one-layer ANN at least.
+		//double range = Math.max(Double.MIN_VALUE, 4.0 / Math.sqrt(6.0 * (fanin + fanout)));
+		//return (2.0 * random() - 1.0) * range;
+		return random() * Math.sqrt(2.0/fanin);
+	}
 	// Map from 2D coordinates (in pixels) to the 1D fixed-length feature vector.
 	private static double get2DfeatureValue(Vector<Double> ex, int x, int y, int offset) { // If only using GREY, then offset = 0;  Else offset = 0 for RED, 1 for GREEN, 2 for BLUE, and 3 for GREY.
 		return ex.get(unitsPerPixel * (y * imageSize + x) + offset); // Jude: I have not used this, so might need debugging.
@@ -1155,14 +1151,14 @@ public class Lab3 {
 	////////////////////////////////////////////////////////////////////////////////////////////////   ONE HIDDEN LAYER
 
 	private static boolean debugOneLayer               = false;  // If set true, more things checked and/or printed (which does slow down the code).
-	private static int    numberOfHiddenUnits          = 300;
+	private static int    numberOfHiddenUnits          = 50;
 	
 	private static int trainOneHU(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors, Vector<Vector<Double>> testFeatureVectors) {
 	    long overallStart   = System.currentTimeMillis(), start = overallStart;
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
         //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		ANN ann = new ANN(trainFeatureVectors);
-		ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate,"sigmoid"));
+		ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate,"relu"));
 		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate,"sigmoid"));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
@@ -1212,10 +1208,10 @@ public class Lab3 {
 		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, dropoutRate);
 		ann.add(conv2);
 		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, dropoutRate);
-		//ann.add(mpl2);
-		ann.add(new DenseLayer(numberOfHiddenUnits, conv2.output_size, eta, 0.0, dropoutRate,"relu"));
+		ann.add(mpl2);
+		ann.add(new DenseLayer(numberOfHiddenUnits, mpl2.output_size, 0.001, 0.0, dropoutRate,"relu"));
 		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
-		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate,"relu"));
+		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate,"sigmoid"));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
 
