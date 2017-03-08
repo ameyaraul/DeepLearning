@@ -91,19 +91,19 @@ class Perceptron {
 	public double getSigmoidOutput(List<Double> values) {
 		double wx = getwx(values);
 		output = 1/(1 + Math.exp(-wx));
-		if (output == 1) {
+		/*if (output == 1) {
 			System.out.println(Math.exp(-wx));
-			System.out.println("God save my sorry soul!");
-		}
+			//System.out.println("God save my sorry soul!");
+		}*/
 		return output;
 	}
 	
 	public double setSigmoidOutput(double wx) {
 		output = 1.0/(1.0 + Math.exp(-wx));
-		if (output == 1) {
+		/*if (output == 1) {
 			System.out.println(Math.exp(-wx));
 			System.out.println("God save my sorry soul version 2!");
-		}
+		}*/
 		return output;
 	}
 	
@@ -740,7 +740,7 @@ class ANN {
 	
 	public double getAccuracy(Vector<Vector<Double>> samples){
 		double acc = 0;
-		this.confusionMatrix = new int [Lab3.enumMap.keySet().size()] [Lab3.enumMap.keySet().size()];
+		//this.confusionMatrix = new int [Lab3.enumMap.keySet().size()] [Lab3.enumMap.keySet().size()];
 		for(Vector<Double> sample : samples) {
 			ArrayList<Double> y_label = this.getLabel(sample);
 			// We use Least Squares Loss for comparing the 
@@ -750,7 +750,7 @@ class ANN {
 			if (ind == y_ind) {
 				acc++;
 			}
-			this.confusionMatrix[ind][y_ind]+=1;
+			//this.confusionMatrix[ind][y_ind]+=1;
 		}
 		return (double)acc/samples.size();
 	}
@@ -809,7 +809,7 @@ public class Lab3 {
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
 	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.0; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
-	private static int    maxEpochs = 12000; // Feel free to set to a different value.
+	private static int    maxEpochs = 1000; // Feel free to set to a different value.
 
 	public static void main(String[] args) {
 		String trainDirectory = "trainset/";
@@ -1206,14 +1206,14 @@ public class Lab3 {
             ann.trainANN();
             
             
-            if (epoch%50==0) {
+            if (epoch%50 == 0) {
             	double tuneAcc = ann.getAccuracy(tuneFeatureVectors);
             	
             	if ((1-tuneAcc) <=best_tuneSetErrors) {
             		best_tuneSetErrors=(int) (1-tuneAcc);
             		double testAcc = ann.getAccuracy(testFeatureVectors);
             		testSetErrorsAtBestTune=(int) (1-testAcc);
-            		//ann.updateConfusionMatrix(testFeatureVectors);
+            		ann.updateConfusionMatrix(testFeatureVectors);
             		best_epoch =epoch;
             		ann.printConfusionMatrix();
 
