@@ -794,6 +794,9 @@ class ANN {
 				layers.get(j).updateOutput(layers.get(j-1).output);
 			}
 			layers.get(j).dropout = back_dropout;
+			for (int k = 0; k < layers.get(j).output.size(); k++) {
+				layers.get(j).output.set(k, layers.get(j).output.get(k) * 1 - back_dropout);
+			}
 		}
 		return layers.get(layers.size() - 1).output;
 	}
