@@ -1209,6 +1209,19 @@ public class Lab3 {
 
 	private static int trainDeep(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors,	Vector<Vector<Double>> testFeatureVectors) {
 		long overallStart   = System.currentTimeMillis(), start = overallStart;
+		
+		// Fractions to use code from Perceptron
+		if (fractionOfTrainingToUse < 1.0) {  // Randomize list, then get the first N of them.
+			int numberToKeep = (int) (fractionOfTrainingToUse * trainFeatureVectors.size());
+			Vector<Vector<Double>> trainFeatureVectors_temp = new Vector<Vector<Double>>(numberToKeep);
+
+			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
+			for (int i = 0; i <numberToKeep; i++) {
+				trainFeatureVectors_temp.add(trainFeatureVectors.get(i));
+			}
+			trainFeatureVectors = trainFeatureVectors_temp;
+		}
+		
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
         //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		ANN ann = new ANN(trainFeatureVectors);
