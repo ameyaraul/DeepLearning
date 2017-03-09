@@ -17,7 +17,10 @@
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -439,7 +442,6 @@ class ConvolutionLayer extends Layer {
 		for (int i = 0; i < output_size; i++) {
 			// Check for dropout first
 			if (this.toDrop[i]) {
-				netDelta[i] = 0;
 				continue;
 			}
 			// calculate delta*w 
@@ -822,10 +824,11 @@ public class Lab3 {
 	                                                  // Or use the get2DfeatureValue() 'accessor function' that maps 2D coordinates into the 1D vector.  
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
-	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.0; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
-	private static int    maxEpochs = 3000; // Feel free to set to a different value.
+	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.5; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
+	private static int    maxEpochs = 1000; // Feel free to set to a different value.
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws FileNotFoundException {
+		System.setOut(new PrintStream(new FileOutputStream("output_16_50hu_50drop.txt")));
 		String trainDirectory = "trainset/";
 		String  tuneDirectory = "tuneset/";
 		String  testDirectory = "testset/";
