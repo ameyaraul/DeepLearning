@@ -1,3 +1,4 @@
 *.class
 *.jpg
 .DS_Store
+*

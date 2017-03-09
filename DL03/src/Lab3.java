@@ -1167,7 +1167,7 @@ public class Lab3 {
 	////////////////////////////////////////////////////////////////////////////////////////////////   ONE HIDDEN LAYER
 
 	private static boolean debugOneLayer               = false;  // If set true, more things checked and/or printed (which does slow down the code).
-	private static int    numberOfHiddenUnits          = 50;
+	private static int    numberOfHiddenUnits          = 300;
 	
 	private static int trainOneHU(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors, Vector<Vector<Double>> testFeatureVectors) {
 	    long overallStart   = System.currentTimeMillis(), start = overallStart;
