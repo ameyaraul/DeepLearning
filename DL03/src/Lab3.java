@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.Vector;
 
@@ -827,11 +826,16 @@ public class Lab3 {
 	                                                  // Or use the get2DfeatureValue() 'accessor function' that maps 2D coordinates into the 1D vector.  
 	                                                  // The last element in this vector holds the 'teacher-provided' label of the example.
 
-	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.5; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
+	private static double eta       =    0.01, fractionOfTrainingToUse = 1.00, dropoutRate = 0.0; // To turn off drop out, set dropoutRate to 0.0 (or a neg number).
 	private static int    maxEpochs = 1000; // Feel free to set to a different value.
 
 	public static void main(String[] args) throws FileNotFoundException {
-		System.setOut(new PrintStream(new FileOutputStream("output_16_50hu_50drop.txt")));
+		StringBuffer fileName = new StringBuffer("output");
+		fileName.append("_"+imageSize+"_");
+		fileName.append(numberOfHiddenUnits+"_");
+		fileName.append((int)dropoutRate+"drop.txt");
+		System.out.println("Writing to logfile:"+fileName.toString());
+		System.setOut(new PrintStream(new FileOutputStream(fileName.toString())));
 		String trainDirectory = "trainset/";
 		String  tuneDirectory = "tuneset/";
 		String  testDirectory = "testset/";
@@ -1206,24 +1210,30 @@ public class Lab3 {
 	
 	////////////////////////////////////////////////////////////////////////////////////////////////  DEEP ANN Code
 
-
+	private static void reportDeepConfig() {
+		System.out.println(  "***** DEEP-CONFIG: UseRGB = " + useRGB + ", imageSize = " + imageSize + "x" + imageSize + ", fraction of training examples used = " + truncate(fractionOfTrainingToUse, 2) 
+		        + ", eta = " + truncate(eta, 2)   + ", dropout rate = "      + truncate(dropoutRate, 2) + ", number HUs = " + numberOfHiddenUnits
+			    + ", activationFunctionForHUs = " + "relu" + ", activationFunctionForOutputs = " + "sigmoid"
+			//	+ ", # forward props = " + comma(forwardPropCounter)
+				);
+	}	
 	private static int trainDeep(Vector<Vector<Double>> trainFeatureVectors, Vector<Vector<Double>> tuneFeatureVectors,	Vector<Vector<Double>> testFeatureVectors) {
 		long overallStart   = System.currentTimeMillis(), start = overallStart;
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
         //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		ANN ann = new ANN(trainFeatureVectors);
-		Layer conv1 = new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, 0.1, 0.0, dropoutRate);
+		Layer conv1 = new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, 0.1, 0.0, 0.0);
 		ann.add(conv1);
 		//ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
-		Layer mpl = new MaxPoolingLayer(20, (int)Math.sqrt(conv1.output_size/20), 2, 2, eta, 0.0, dropoutRate);
+		Layer mpl = new MaxPoolingLayer(20, (int)Math.sqrt(conv1.output_size/20), 2, 2, eta, 0.0, 0.0);
 		ann.add(mpl);
-		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, dropoutRate);
+		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, 0.0);
 		ann.add(conv2);
-		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, dropoutRate);
+		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, 0.0);
 		ann.add(mpl2);
-		ann.add(new DenseLayer(numberOfHiddenUnits, mpl2.output_size, 0.001, 0.0, dropoutRate,"relu"));
+		ann.add(new DenseLayer(numberOfHiddenUnits, mpl2.output_size, 0.001, 0.0, 0.0,"relu"));
 		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
-		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate,"sigmoid"));
+		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, 0.0,"sigmoid"));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
 
@@ -1232,7 +1242,9 @@ public class Lab3 {
             
             if (epoch%50 == 0) {
             	int tuneErrors = ann.getMistakes(tuneFeatureVectors);
-            	System.out.println(tuneErrors);
+            	System.out.println("Tune Error:"+tuneErrors);
+            	System.out.println("Best tune error so far:"+best_tuneSetErrors);
+            	System.out.println("Test error at best tune:"+testSetErrorsAtBestTune);
             	if (tuneErrors <=best_tuneSetErrors) {
             		best_tuneSetErrors= tuneErrors;
             		int testErrors = ann.getMistakes(testFeatureVectors);
@@ -1245,7 +1257,8 @@ public class Lab3 {
             }
 
 	        System.out.println("Done with Epoch # " + comma(epoch) + ".  Took " + convertMillisecondsToTimeSpan(System.currentTimeMillis() - start) + " (" + convertMillisecondsToTimeSpan(System.currentTimeMillis() - overallStart) + " overall).");
-	        reportOneLayerConfig(); // Print out some info after epoch, so you can see what experiment is running in a given console.
+
+	        reportDeepConfig(); // Print out some info after epoch, so you can see what experiment is running in a given console.
 	        
 	        start = System.currentTimeMillis();
 		}
