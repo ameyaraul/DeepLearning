@@ -161,7 +161,7 @@ abstract class Layer {
 
 class DenseLayer extends Layer {
 	
-	boolean[] toDrop;
+	//boolean[] toDrop;
 	Random randGen;
 	
 	public DenseLayer(int output_size, int input_size, double eta, double alpha, double dropout,String activation) {
@@ -182,7 +182,7 @@ class DenseLayer extends Layer {
 			output.add(i, 0.0); 
 		}
 		
-		toDrop = new boolean[output_size];
+		//toDrop = new boolean[output_size];
 		randGen = new Random(ANN.SEED);
 	}
 	
@@ -206,26 +206,16 @@ class DenseLayer extends Layer {
 
 		for (int i = 0 ; i < output_size; i++) {
 			if (randGen.nextDouble() > dropout) {
-				toDrop[i] = false;
-			} else {
-				toDrop[i] = true;
-				units[i].output = 0;
-				output.set(i, 0.0);
-				continue;
-			}
-//			if (dropped_units.contains(i)) {
-//				units[i].output = 0;
-//				output.set(i, 0.0);
-//				continue;
-//			}
-			if (activationFunction.equalsIgnoreCase("relu") 	) {
+				if (activationFunction.equalsIgnoreCase("relu") 	) {
 
-				output.set(i, units[i].getRELUOutput(values));
-			}
-			else{
-				output.set(i, units[i].getSigmoidOutput(values));
-			}
-			
+					output.set(i, units[i].getRELUOutput(values)/dropout);
+				}
+				else{
+					output.set(i, units[i].getSigmoidOutput(values)/dropout);
+				}
+			} else {
+				output.set(i, 0.0);
+			}			
 		}
 	}
 	
@@ -237,12 +227,7 @@ class DenseLayer extends Layer {
 	
 	public void updateWeights(ArrayList<Double> labels, ArrayList<Double> layer_inputs) {
 		for (int i = 0; i < output_size; i++) {
-			if (toDrop[i]) {
-				continue;
-			}
-//			if (dropped_units.contains(i)){
-//				continue;
-//			}	
+			
 			if (activationFunction.equalsIgnoreCase("relu") 	) {
 				units[i].reluUpdateWeights(labels.get(i) - units[i].output, layer_inputs);
 			}
@@ -256,12 +241,7 @@ class DenseLayer extends Layer {
 	@Override
 	public void updateWeights(double label, ArrayList<Double> layer_inputs) {
 		for (int i = 0; i < output_size; i++) {
-			if (toDrop[i]) {
-				continue;
-			}
-//			if (dropped_units.contains(i)){
-//				continue;
-//			}
+			
 			double y = 0;
 			if (label == i) 
 				y = 1;
@@ -278,14 +258,7 @@ class DenseLayer extends Layer {
 	@Override
 	public void updateWeights(List<Double> layer_inputs, Layer nextLayer) {
 		for (int i = 0; i < output_size; i++) {
-			if (toDrop[i]) {
-				continue;
-			}
-//			if (dropped_units.contains(i)){
-//				continue;
-//			}
-			// calculate delta*w 
-			// unit[i] is connected to units in the nextLayer
+			
 			double deltaw = nextLayer.getDeltaW(i);
 			if (activationFunction.equalsIgnoreCase("relu") 	) {
 				units[i].reluUpdateWeights(deltaw, layer_inputs);
@@ -328,7 +301,7 @@ class ConvolutionLayer extends Layer {
 	int noPlates;
 	int inputImageSize;
 	int unitsPerPlate;
-	boolean[] toDrop;
+	//boolean[] toDrop;
 	Random rand;
 	
 	public ConvolutionLayer(int no_plates, int inputImageSize, int conv_window_size, int dimension, double eta, double alpha, double dropout) {
@@ -368,7 +341,6 @@ class ConvolutionLayer extends Layer {
 			output.add(i, 0.0); 
 		}
 		
-		toDrop = new boolean[output_size];
 	}
 
 	@Override
@@ -385,41 +357,39 @@ class ConvolutionLayer extends Layer {
 					int unit_index = (i*outputSideDim + j)*noPlates + plate;
 					// Now check for dropout
 					if (rand.nextDouble() > dropout) {
-						this.toDrop[unit_index] = false;
+						
+						// For each plate compute the outputs
+						// we are looking at unit (i,j) in the output of plate 'plate' 
+						// lets collect the weighted sum of corresponding input
+						// for every (i,j) in the output, the corresponding position in input is (i+window/2, j + window/2)
+						// So now loop over all those positions and compute the weighted sum 
+						
+						double wx = 0;
+						for (int k = i; k < i + convWindowSize; k++) {
+							for(int l = j; l < j + convWindowSize; l++) {
+								// First covert 2-D indexing to 1-D
+								int w_index = (((k-i)*this.convWindowSize + (l-j))*noPlates + plate)*dimensions;
+								// Note that (k,l) is the index in the input image
+								int image_index = (k)*this.inputImageSize + (l);
+								
+								// Now for all the input dimensions e.g dim=4 for color compute w.x
+								for (int offset = 0; offset < dimensions; offset++) {
+									wx += w[w_index + offset] * values.get(image_index*dimensions + offset);
+								}
+								
+							}	
+						}
+						// Add bias
+						wx += w_bias[plate]*-1;
+						
+						// Now set the units output to the correct value
+						// Currently using SIGMOID
+						
+						output.set(unit_index, units[unit_index].setSigmoidOutput(wx)/dropout);
+					
 					} else {
-						this.toDrop[unit_index] = true;
 						output.set(unit_index,0.0);
-						units[unit_index].output = 0;
-						continue;
-					}
-					// For each plate compute the outputs
-					// we are looking at unit (i,j) in the output of plate 'plate' 
-					// lets collect the weighted sum of corresponding input
-					// for every (i,j) in the output, the corresponding position in input is (i+window/2, j + window/2)
-					// So now loop over all those positions and compute the weighted sum 
-					
-					double wx = 0;
-					for (int k = i; k < i + convWindowSize; k++) {
-						for(int l = j; l < j + convWindowSize; l++) {
-							// First covert 2-D indexing to 1-D
-							int w_index = (((k-i)*this.convWindowSize + (l-j))*noPlates + plate)*dimensions;
-							// Note that (k,l) is the index in the input image
-							int image_index = (k)*this.inputImageSize + (l);
-							
-							// Now for all the input dimensions e.g dim=4 for color compute w.x
-							for (int offset = 0; offset < dimensions; offset++) {
-								wx += w[w_index + offset] * values.get(image_index*dimensions + offset);
-							}
-							
-						}	
-					}
-					// Add bias
-					wx += w_bias[plate]*-1;
-					
-					// Now set the units output to the correct value
-					// Currently using SIGMOID
-					
-					output.set(unit_index, units[unit_index].setSigmoidOutput(wx));				
+					}				
 				}
 			}
 		}
@@ -439,10 +409,7 @@ class ConvolutionLayer extends Layer {
 		double[] netDelta = new double[w.length];
 		double[] netDeltaBias = new double[noPlates];
 		for (int i = 0; i < output_size; i++) {
-			// Check for dropout first
-			if (this.toDrop[i]) {
-				continue;
-			}
+			
 			// calculate delta*w 
 			// unit[i] is connected to units in the nextLayer
 			double deltaw = nextLayer.getDeltaW(i);
@@ -1235,18 +1202,18 @@ public class Lab3 {
         int  trainSetErrors = Integer.MAX_VALUE, tuneSetErrors = Integer.MAX_VALUE, best_tuneSetErrors = Integer.MAX_VALUE, testSetErrors = Integer.MAX_VALUE, best_epoch = -1, testSetErrorsAtBestTune = Integer.MAX_VALUE;
         //ANN ann = new ANN(eta, 0.0, 1000, new int[]{numberOfHiddenUnits, Category.values().length}, new double[] {dropoutRate, 0}, unitsPerPixel, trainFeatureVectors, tuneFeatureVectors, testFeatureVectors);
 		ANN ann = new ANN(trainFeatureVectors);
-		Layer conv1 = new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, 0.1, 0.0, 0.0);
+		Layer conv1 = new ConvolutionLayer(20, imageSize, 5, unitsPerPixel, 0.1, 0.0, dropoutRate);
 		ann.add(conv1);
 		//ann.add(new DenseLayer(numberOfHiddenUnits, 20 * (imageSize - 5 + 1) * (imageSize - 5 + 1), eta, 0.0, dropoutRate));
 		Layer mpl = new MaxPoolingLayer(20, (int)Math.sqrt(conv1.output_size/20), 2, 2, eta, 0.0, 0.0);
 		ann.add(mpl);
-		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, 0.0);
+		Layer conv2 = new ConvolutionLayer(20, (int)Math.sqrt(mpl.output_size/20), 2, 20, 0.1, 0.0, dropoutRate);
 		ann.add(conv2);
 		Layer mpl2 = new MaxPoolingLayer(20, (int)Math.sqrt(conv2.output_size/20), 2, 2, eta, 0.0, 0.0);
 		ann.add(mpl2);
-		ann.add(new DenseLayer(numberOfHiddenUnits, mpl2.output_size, 0.001, 0.0, 0.0,"relu"));
+		ann.add(new DenseLayer(numberOfHiddenUnits, mpl2.output_size, 0.001, 0.0, dropoutRate,"relu"));
 		//ann.add(new DenseLayer(numberOfHiddenUnits, trainFeatureVectors.get(0).size(), eta, 0.0, dropoutRate));
-		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, 0.0,"sigmoid"));
+		ann.add(new DenseLayer(Category.values().length, numberOfHiddenUnits, eta, 0.0, dropoutRate,"sigmoid"));
         for (int epoch = 1; epoch <= maxEpochs /* && trainSetErrors > 0 */; epoch++) { // Might still want to train after trainset error = 0 since we want to get all predictions on the 'right side of zero' (whereas errors defined wrt HIGHEST output).
 			permute(trainFeatureVectors); // Note: this is an IN-PLACE permute, but that is OK.
 
